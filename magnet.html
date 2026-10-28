@@ -1,0 +1,396 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>壁と糸 — 引力・斥力版</title>
+<style>
+*{box-sizing:border-box}body{margin:0;padding:24px;background:#f5f5f2;color:#262826;font:15px/1.6 system-ui,-apple-system,sans-serif}main{max-width:1120px;margin:auto}header{display:flex;align-items:baseline;gap:18px;flex-wrap:wrap;margin-bottom:14px}h1{font-size:25px;margin:0}header span,.hint{color:#686d68;font-size:13px}.bar{display:flex;align-items:center;flex-wrap:wrap;gap:9px;margin:12px 0}button,select,input{font:inherit}button,select{border:1px solid #bfc4bf;border-radius:5px;background:#fff;color:#262826;padding:9px 15px}button{cursor:pointer;touch-action:manipulation}button:hover{background:#e9ece8}button:focus-visible,select:focus-visible,input:focus-visible,summary:focus-visible{outline:3px solid #5496d5;outline-offset:2px}button.primary{background:#272d29;color:#fff;border-color:#272d29}button:disabled{opacity:.45;cursor:default}.check{display:flex;gap:6px;align-items:center;margin-left:6px}.board{position:relative;background:white;border:1px solid #acb5ad;line-height:0}canvas{display:block;width:100%;height:auto;aspect-ratio:3/2;touch-action:manipulation}#status{font-weight:650;line-height:1.5;margin:9px 0 3px;min-height:24px}#status[data-state="won"]{color:#22784b}#status[data-state="lost"]{color:#b1382e}#stats{font-variant-numeric:tabular-nums;font-size:13px;color:#5a625b}.legend{display:flex;gap:18px;flex-wrap:wrap;font-size:13px;margin:10px 0}.dot{display:inline-block;width:10px;height:10px;background:#2874b9;border-radius:50%;margin-right:5px}.dot.goal{background:transparent;border:2px solid #39835b}.dot.wall{border-radius:0;background:#272d29}details{margin-top:16px;padding:12px 15px;background:#fff;border:1px solid #d7dcd6;border-radius:5px}summary{cursor:pointer;font-weight:600}.settings{display:grid;grid-template-columns:repeat(3,1fr);gap:16px;margin-top:13px}.settings label{display:block;font-size:13px}.settings input[type=range]{width:100%;accent-color:#3e6e53}p{margin:8px 0}.rules{font-size:13px;color:#59615a}.rules ul{padding-left:21px;margin:8px 0}#debugInfo{white-space:pre-wrap;font:12px/1.7 ui-monospace,monospace;padding:10px;background:#edf1eb;margin:10px 0 0}kbd{font:12px ui-monospace,monospace;border:1px solid #c6ccc6;border-radius:3px;padding:1px 5px;background:#fff}@media(max-width:600px){body{padding:12px}.bar{gap:7px}button,select{padding:10px 11px}.settings{grid-template-columns:1fr}h1{font-size:22px}header{gap:4px}.hint{font-size:12px}.legend{gap:10px}}
+</style>
+</head>
+<body>
+<main>
+<header><h1>壁と糸</h1><span>引力・斥力版 / 48 × 32</span></header>
+<p class="hint">順行は青い引力、逆行は赤い斥力。盤面タップで反転し、球を緑のゴールへ。</p>
+<div class="bar">
+<button id="play" class="primary">開始</button><button id="reverse">↔ 反転</button><button id="step">1マス進む</button><button id="reset" title="同じコースを最初から">リセット</button><button id="newCourse">新しいコース</button>
+<select id="level" aria-label="盤面"><option value="random">ランダム</option><option value="bars">棒あり</option><option value="basic">外周のみ</option></select>
+<label class="check"><input id="debug" type="checkbox">デバッグ表示</label>
+</div>
+<p id="courseInfo" class="hint"></p>
+<p><strong id="mode" role="status" aria-live="polite"></strong> <span class="hint">／ 盤面タップで反転</span></p>
+<div class="board"><canvas id="board" width="960" height="640" tabindex="0" role="button" aria-label="ゲーム盤。タップ、Enter、Spaceで順行と逆行を反転。">このゲームにはCanvas対応ブラウザが必要です。</canvas></div>
+<div id="status" role="status" aria-live="polite"></div><div id="stats"></div>
+<div class="legend"><span><i class="dot wall"></i>壁・車・通過セル</span><span><i class="dot"></i>球</span><span><i class="dot goal"></i>ゴール</span><span style="color:#2874b9">青い実線＝引力</span><span style="color:#cf493f">赤い破線＝斥力</span></div>
+<p class="hint"><kbd>Space</kbd> 反転　<kbd>P</kbd> 開始／停止　<kbd>N</kbd> 1マス　<kbd>R</kbd> リセット　<kbd>D</kbd> デバッグ</p>
+<details id="settings"><summary>調整・デバッグ</summary>
+<div class="settings">
+<label>車の速さ <output id="speedOut"></output><input id="speed" type="range" min="2" max="20" value="8" step="1"></label>
+<label>アンカー間隔 <output id="spacingOut"></output><input id="spacing" type="range" min="2" max="12" value="4" step="1"></label>
+<label>1本の張力 <output id="tensionOut"></output><input id="tension" type="range" min="0.1" max="2" value="0.7" step="0.1"></label>
+</div>
+<div class="bar"><label class="check"><input id="freeze" type="checkbox">球を固定して壁の成長を観察</label><button id="defaults">初期設定に戻す</button></div>
+<p class="hint">設定はその場で反映。リセットは盤面のみを戻します。デバッグでは橙＝車と次のセル、紫＝合力、青・赤の矢印＝各糸の力、数字＝アンカー番号。球固定中はクリア判定を止めます。球の速度上限は3マス/秒、減衰係数は0.95/秒です。</p>
+<pre id="debugInfo" hidden></pre>
+</details>
+<details class="rules"><summary>この試作でのルールと仮定</summary>
+<ul>
+<li>「リセット」は壁・球・ゴールを同じコースの開始時に戻します。「新しいコース」は四角い枠の中に新たな壁とゴールを生成します。ゴールは球から9〜18マス離れた場所を選び、壁の裏側になることもあります。生成時には球とゴールの余白と、余裕を持って通れる経路を確認しています。</li>
+<li>外周・内部の棒・通過セルは同じ占有グリッド。車は1マスの正方形で、壁側をたどって上下左右に自動走行します。離れたセルが壁になり、元の壁や軌跡は消えません。車の現在セルにも接触判定があります。</li>
+<li>反転すると、その場を壁にして、壁と反対側の隣接する空きセルへ1マス移り、進行方向と壁をたどる側を反転します。角では空いている隣接セルを使います。次の層は成長済みの壁に沿うため、先に描いた部分では層の段差が大きくなります。飛び越しや時間の巻き戻しはしません。</li>
+<li>走行・反転の移動距離が設定マス数に達するごとに、車から球までの直線上に壁がない場合だけ、離れたセルの中心にアンカーを置いて糸を張ります。内部の棒や成長した壁に遮られる場合は、その回の射出を見送ります。同じセルに重複して置きません。</li>
+<li>最初は順行。反転するたびに順行と逆行が切り替わります。順行で生成した青い糸は固定点へ引っ張り、逆行で生成した赤い糸は固定点から押し離します。反転操作による移動時に発射する場合も、切り替え後の色になります。すでに張った糸の色と力の向きは変わらず、両方の力が同時に作用します。</li>
+<li>各糸の力の大きさは色・長さによらず同じです。青は固定点方向、赤はその反対方向の単位ベクトルを合計します。壁は両方向で成長します。球には速度減衰（0.95/秒）と速度上限（3マス/秒）を適用しています。</li>
+<li>遮蔽物の判定は新しい糸を張る瞬間に行います。車自身のセルは判定から除き、それ以外の壁の辺・角に触れる経路も遮断します。すでに張った糸は従来どおり残り、後から壁が成長しても切れず、巻き付きません。</li>
+<li>球が壁・車に触れる、または車の隣接空間がなくなると失敗。球全体がゴール円に入ると成功。衝突を成功より優先します。</li>
+</ul>
+</details>
+</main>
+<script id="engine">
+'use strict';
+// Pure simulation: positions and forces are measured in grid cells and seconds.
+class GridGame {
+  constructor(level='bars', config={}) {
+    this.w=48; this.h=32;
+    this.config={speed:8,spacing:4,tension:0.7,freeze:false,...config};
+    this.maxBallSpeed=3;this.damping=.95;
+    this.newCourse(level);
+  }
+  newCourse(level='random', seed) {
+    if(seed===undefined){
+      seed=(Math.random()*4294967296)>>>0;
+      if(seed===this.course?.seed)seed=(seed+1)>>>0;
+    }
+    seed=seed>>>0;
+    this.level=level; this.grid=new Uint8Array(this.w*this.h);
+    for(let y=0;y<this.h;y++)for(let x=0;x<this.w;x++)
+      if(x===0||y===0||x===this.w-1||y===this.h-1)this.grid[y*this.w+x]=1;
+    this.ball={x:24,y:16,vx:0,vy:0,r:0.38};
+    this.goal={x:17,y:15,r:1.25};
+    if(level==='bars') {
+      this.line(12,24,12,30); this.line(28,1,28,8);
+      this.line(23,6,28,6); this.line(39,20,46,20);
+      this.line(39,20,39,25);
+    }
+    if(level==='random')this.generateCourse(seed);
+    this.course={level,seed,grid:this.grid.slice(),ball:{...this.ball},goal:{...this.goal}};
+    this.reset();
+  }
+  circleClear(x,y,r) {
+    for(let cy=Math.floor(y-r);cy<=Math.floor(y+r);cy++)
+      for(let cx=Math.floor(x-r);cx<=Math.floor(x+r);cx++){
+        if(!this.occupied(cx,cy))continue;
+        const dx=x-Math.max(cx,Math.min(cx+1,x)),dy=y-Math.max(cy,Math.min(cy+1,y));
+        if(dx*dx+dy*dy<=r*r)return false;
+      }
+    return true;
+  }
+  courseDistances() {
+    // Extra clearance beyond the ball radius keeps routes comfortably wide.
+    const clear=new Uint8Array(this.w*this.h),dist=new Int16Array(this.w*this.h).fill(-1);
+    for(let y=1;y<this.h-1;y++)for(let x=1;x<this.w-1;x++)
+      clear[y*this.w+x]=this.circleClear(x+.5,y+.5,1.4)?1:0;
+    const start=Math.floor(this.ball.y)*this.w+Math.floor(this.ball.x),queue=[start];dist[start]=0;
+    for(let i=0;i<queue.length;i++){
+      const k=queue[i],x=k%this.w,y=Math.floor(k/this.w);
+      for(const [dx,dy] of GridGame.dirs){
+        const nx=x+dx,ny=y+dy,n=ny*this.w+nx;
+        if(nx<1||ny<1||nx>=this.w-1||ny>=this.h-1||!clear[n]||dist[n]>=0)continue;
+        dist[n]=dist[k]+1;queue.push(n);
+      }
+    }
+    return dist;
+  }
+  generateCourse(seed) {
+    let state=seed;
+    const random=()=>((state=(Math.imul(state,1664525)+1013904223)>>>0)/4294967296);
+    const integer=(a,b)=>a+Math.floor(random()*(b-a+1));
+    this.ball={x:integer(21,26)+.5,y:integer(13,18)+.5,vx:0,vy:0,r:.38};
+    const sides=[0,1,2,3];
+    for(let i=3;i>0;i--){const j=integer(0,i);[sides[i],sides[j]]=[sides[j],sides[i]];}
+    const count=integer(3,5);let added=0;
+    for(let attempt=0;attempt<100&&added<count;attempt++){
+      const side=attempt<4?sides[attempt]:integer(0,3),vertical=side<2;
+      const position=vertical?integer(7,this.w-8):integer(7,this.h-8);
+      const length=vertical?integer(6,12):integer(7,15);
+      const x=vertical?position:side===2?1:this.w-2;
+      const y=vertical?(side===0?1:this.h-2):position;
+      const dx=vertical?0:side===2?1:-1,dy=vertical?(side===0?1:-1):0;
+      const cells=[];
+      for(let k=0;k<length;k++)cells.push([x+dx*k,y+dy*k]);
+      if(random()<.5){
+        const sign=random()<.5?-1:1,arm=integer(2,4),tip=cells[cells.length-1];
+        for(let k=1;k<=arm;k++)cells.push([tip[0]+dy*sign*k,tip[1]+dx*sign*k]);
+      }
+      const valid=cells.every(([cx,cy])=>{
+        if(cx<1||cy<1||cx>=this.w-1||cy>=this.h-1)return false;
+        if(Math.hypot(cx+.5-this.ball.x,cy+.5-this.ball.y)<4.5)return false;
+        if(cx<=4&&cy>=this.h-7)return false; // Preserve the car's starting space.
+        for(let yy=cy-2;yy<=cy+2;yy++)for(let xx=cx-2;xx<=cx+2;xx++){
+          const mountingEdge=(side===0&&yy<=0)||(side===1&&yy>=this.h-1)||
+            (side===2&&xx<=0)||(side===3&&xx>=this.w-1);
+          if(!mountingEdge&&this.occupied(xx,yy))return false;
+        }
+        return true;
+      });
+      if(valid){for(const [cx,cy] of cells)this.grid[cy*this.w+cx]=1;added++;}
+    }
+    const dist=this.courseDistances(),visible=[],hidden=[];
+    for(let y=4;y<this.h-4;y++)for(let x=4;x<this.w-4;x++){
+      const distance=Math.hypot(x+.5-this.ball.x,y+.5-this.ball.y),route=dist[y*this.w+x];
+      if(distance<9||distance>18||route<0||route>distance*1.8+6||!this.circleClear(x+.5,y+.5,2))continue;
+      (this.canAttach(x,y)?visible:hidden).push({x:x+.5,y:y+.5,r:1.25});
+    }
+    const preferred=random()<.55?hidden:visible;
+    const candidates=preferred.length?preferred:visible.concat(hidden);
+    if(!candidates.length)throw new Error('コースのゴール候補がありません');
+    this.goal=candidates[integer(0,candidates.length-1)];
+  }
+  reset(level=this.level) {
+    if(level!==this.course.level){this.newCourse(level);return;}
+    this.level=this.course.level;this.grid=this.course.grid.slice();
+    this.age=new Uint16Array(this.w*this.h);
+    this.car={x:1,y:30,d:3,hand:-1}; // E,S,W,N; hand -1 = left, +1 = right.
+    this.ball={...this.course.ball};this.goal={...this.course.goal};
+    this.anchors=[]; this.anchorKeys=new Set(); this.history=[];this.polarity=1;
+    this.distance=0; this.sinceAnchor=0; this.reversals=0; this.grown=0;
+    this.time=0; this.moveClock=0; this.state='ready'; this.reason='';
+    this.lastReverse=null; this.hit=null; this.force={x:0,y:0};
+  }
+  line(x0,y0,x1,y1) {
+    const dx=Math.sign(x1-x0),dy=Math.sign(y1-y0);
+    for(let x=x0,y=y0;;x+=dx,y+=dy){this.grid[y*this.w+x]=1;if(x===x1&&y===y1)break;}
+  }
+  occupied(x,y) {return x<0||y<0||x>=this.w||y>=this.h||this.grid[y*this.w+x]===1;}
+  neighbor(d) {const v=GridGame.dirs[(d+4)%4];return {x:this.car.x+v[0],y:this.car.y+v[1],d:(d+4)%4};}
+  nextMove() {
+    const {d,hand}=this.car;
+    // Only local, cardinal movement. The deposited cell behind is now solid.
+    for(const dir of [d+hand,d,d-hand,d+2]) {
+      const n=this.neighbor(dir);
+      if(!this.occupied(n.x,n.y))return n;
+    }
+    return null;
+  }
+  terminal(){return this.state==='won'||this.state==='lost';}
+  finish(state,reason){this.state=state;this.reason=reason;}
+  canAttach(x,y) {
+    const sx=x+0.5,sy=y+0.5,dx=this.ball.x-sx,dy=this.ball.y-sy;
+    const length=Math.hypot(dx,dy);
+    if(length<=this.ball.r)return false;
+    // Test the closed segment up to the near surface of the ball. The launch
+    // cell is exempt because deposit() has already converted it into a wall.
+    const end=1-this.ball.r/length,ex=sx+dx*end,ey=sy+dy*end;
+    for(let cy=Math.floor(Math.min(sy,ey));cy<=Math.floor(Math.max(sy,ey));cy++)
+      for(let cx=Math.floor(Math.min(sx,ex));cx<=Math.floor(Math.max(sx,ex));cx++){
+        if((cx===x&&cy===y)||!this.occupied(cx,cy))continue;
+        let enter=0,exit=end;
+        for(const [origin,delta,low] of [[sx,dx,cx],[sy,dy,cy]]){
+          if(Math.abs(delta)<1e-12){
+            if(origin<low||origin>low+1){enter=Infinity;break;}
+          }else{
+            const a=(low-origin)/delta,b=(low+1-origin)/delta;
+            enter=Math.max(enter,Math.min(a,b));exit=Math.min(exit,Math.max(a,b));
+          }
+        }
+        if(enter<=exit+1e-10)return false;
+      }
+    return true;
+  }
+  deposit(kind) {
+    const {x,y}=this.car,idx=y*this.w+x;
+    this.grid[idx]=1;this.age[idx]=this.reversals+1;this.grown++;
+    this.history.push({x,y,kind,layer:this.reversals});
+    this.distance++;this.sinceAnchor++;
+    if(this.sinceAnchor>=this.config.spacing) {
+      this.sinceAnchor=0;const key=x+','+y;
+      if(!this.anchorKeys.has(key)&&this.canAttach(x,y)) {
+        this.anchorKeys.add(key);this.anchors.push({x:x+0.5,y:y+0.5,key,polarity:this.polarity});
+      }
+    }
+  }
+  move() {
+    if(this.terminal())return false;
+    const n=this.nextMove();
+    if(!n){this.finish('lost','車の進む空間がなくなりました');return false;}
+    this.deposit('run');Object.assign(this.car,n);this.checkOutcome();return true;
+  }
+  reverse() {
+    if(this.terminal())return false;
+    const {x,y,d,hand}=this.car;
+    // Prefer the free side of the wall; at a corner use a local free neighbor.
+    let n=null;
+    for(const dir of [d-hand,d,d+2,d+hand]) {
+      const candidate=this.neighbor(dir);
+      if(!this.occupied(candidate.x,candidate.y)){n=candidate;break;}
+    }
+    if(!n){this.finish('lost','反転する空間がなくなりました');return false;}
+    this.polarity*=-1;
+    this.deposit('reverse');this.reversals++;
+    this.car={x:n.x,y:n.y,d:(d+2)%4,hand:-hand};
+    this.lastReverse={from:{x,y},to:{x:n.x,y:n.y},at:this.time};
+    this.moveClock=0;this.checkOutcome();return true;
+  }
+  computeForce() {
+    let x=0,y=0;
+    for(const a of this.anchors) {
+      const dx=a.x-this.ball.x,dy=a.y-this.ball.y,len=Math.hypot(dx,dy);
+      if(len>1e-9){const strength=this.config.tension*(a.polarity??1);x+=strength*dx/len;y+=strength*dy/len;}
+    }
+    return this.force={x,y};
+  }
+  collision() {
+    const b=this.ball;
+    for(let y=Math.floor(b.y-b.r);y<=Math.floor(b.y+b.r);y++)
+      for(let x=Math.floor(b.x-b.r);x<=Math.floor(b.x+b.r);x++){
+        if(!this.occupied(x,y)&&!(x===this.car.x&&y===this.car.y))continue;
+        const dx=b.x-Math.max(x,Math.min(x+1,b.x));
+        const dy=b.y-Math.max(y,Math.min(y+1,b.y));
+        if(dx*dx+dy*dy<=b.r*b.r)return {x,y};
+      }
+    return null;
+  }
+  checkOutcome() {
+    const hit=this.collision();
+    if(hit){this.hit=hit;this.finish('lost','球が壁に触れました');return;}
+    if(!this.config.freeze&&Math.hypot(this.ball.x-this.goal.x,this.ball.y-this.goal.y)+this.ball.r<=this.goal.r)
+      this.finish('won','球をゴールに運びました');
+  }
+  tick(dt=1/120) {
+    if(this.terminal())return;
+    this.time+=dt;this.moveClock+=dt*this.config.speed;
+    while(this.moveClock>=1&&!this.terminal()){this.moveClock-=1;this.move();}
+    if(this.terminal())return;
+    this.computeForce();
+    if(this.config.freeze){this.ball.vx=0;this.ball.vy=0;return;}
+    const b=this.ball;
+    // Substeps bound travel to < 0.1 cell, including accelerated motion.
+    const n=Math.max(1,Math.ceil((Math.hypot(b.vx,b.vy)*dt+this.anchors.length*this.config.tension*dt*dt)/0.1));
+    const h=dt/n,decay=Math.exp(-this.damping*h);
+    for(let i=0;i<n&&!this.terminal();i++){
+      const f=this.computeForce();
+      b.vx=b.vx*decay+f.x*(1-decay)/this.damping;
+      b.vy=b.vy*decay+f.y*(1-decay)/this.damping;
+      const speed=Math.hypot(b.vx,b.vy);
+      if(speed>this.maxBallSpeed){b.vx*=this.maxBallSpeed/speed;b.vy*=this.maxBallSpeed/speed;}
+      b.x+=b.vx*h;b.y+=b.vy*h;this.checkOutcome();
+    }
+  }
+  stepCell() {
+    if(this.terminal())return;
+    const target=this.distance+1;
+    for(let i=0;i<1000&&this.distance<target&&!this.terminal();i++)this.tick();
+  }
+}
+GridGame.dirs=[[1,0],[0,1],[-1,0],[0,-1]];
+globalThis.GridGame=GridGame;
+</script>
+<script id="ui">
+(()=>{
+  const $=id=>document.getElementById(id),canvas=$('board'),ctx=canvas.getContext('2d');
+  if(!ctx){$('status').textContent='Canvasを利用できません。別のブラウザで開いてください。';return;}
+  const g=new GridGame('random');let running=false,acc=0,last=0,lastText=0;
+  const C=20,wall='#272d29';
+  function settings(){
+    g.config.speed=Number($('speed').value);g.config.spacing=Number($('spacing').value);
+    g.config.tension=Number($('tension').value);g.config.freeze=$('freeze').checked;
+    $('speedOut').textContent=g.config.speed+' マス/秒';$('spacingOut').textContent=g.config.spacing+' マス';
+    $('tensionOut').textContent=g.config.tension.toFixed(1);
+    refresh();draw();
+  }
+  function refresh(){
+    if(g.terminal())running=false;
+    $('play').textContent=running?'一時停止':g.time>0?'再開':'開始';
+    $('play').disabled=g.terminal();$('reverse').disabled=g.terminal();$('step').disabled=running||g.terminal();
+    const status=g.terminal()?(g.state==='won'?'成功 — ':'失敗 — ')+g.reason+'。リセットで再挑戦。':
+      g.config.freeze?'観察モード — 球を固定中。反転して層の増え方を確認できます。':
+      running?'走行中 — Space または「反転」で次の層へ。':g.time>0?'一時停止中 — 反転や1マス送りで確認できます。':'開始待ち — 「開始」で走行。「1マス進む」で少しずつ確認。';
+    if($('status').textContent!==status)$('status').textContent=status;
+    $('status').dataset.state=g.state;
+    const mode=g.polarity===1?'順行 — 青い引力の糸を生成':'逆行 — 赤い斥力の糸を生成';
+    if($('mode').textContent!==mode)$('mode').textContent=mode;
+    $('mode').style.color=g.polarity===1?'#2874b9':'#cf493f';
+    const blue=g.anchors.filter(a=>a.polarity===1).length,red=g.anchors.length-blue;
+    $('courseInfo').textContent=(g.level==='random'?'コース '+g.course.seed.toString(36).toUpperCase():g.level==='bars'?'固定コース・棒あり':'固定コース・外周のみ')+'　／　リセット：同じコースを再挑戦　・　新しいコース：ランダムに作り直す';
+    $('stats').textContent=`経過 ${g.time.toFixed(1)} 秒　移動 ${g.distance} マス　壁 +${g.grown} マス　糸 ${g.anchors.length} 本（青 ${blue} / 赤 ${red}）　反転 ${g.reversals} 回`;
+    const debug=$('debug').checked;$('debugInfo').hidden=!debug;
+    if(debug){const f=g.computeForce(),n=g.nextMove();
+      $('debugInfo').textContent=`車 (${g.car.x}, ${g.car.y}) ${['→','↓','←','↑'][g.car.d]} / 壁は${g.car.hand===-1?'左':'右'}手\n次 (${n?n.x+', '+n.y:'なし'}) / 次のアンカーまで ${Math.max(1,g.config.spacing-g.sinceAnchor)} マス\n球 (${g.ball.x.toFixed(2)}, ${g.ball.y.toFixed(2)}) / 速さ ${Math.hypot(g.ball.vx,g.ball.vy).toFixed(2)}\n合力 (${f.x.toFixed(2)}, ${f.y.toFixed(2)}) / 大きさ ${Math.hypot(f.x,f.y).toFixed(2)}\n橙の枠＝現在セル / 橙の半透明＝次のセル / 紫の線＝直近の反転`;
+    }
+  }
+  function arrow(x,y,dx,dy,color,width=1){
+    const len=Math.hypot(dx,dy);if(len<.01)return;
+    const a=Math.atan2(dy,dx),head=Math.min(5,len*.4);
+    ctx.strokeStyle=color;ctx.lineWidth=width;ctx.beginPath();ctx.moveTo(x,y);ctx.lineTo(x+dx,y+dy);
+    ctx.moveTo(x+dx-head*Math.cos(a-.5),y+dy-head*Math.sin(a-.5));ctx.lineTo(x+dx,y+dy);ctx.lineTo(x+dx-head*Math.cos(a+.5),y+dy-head*Math.sin(a+.5));ctx.stroke();
+  }
+  function draw(){
+    const debug=$('debug').checked,b=g.ball;
+    ctx.clearRect(0,0,960,640);ctx.fillStyle='#fff';ctx.fillRect(0,0,960,640);
+    ctx.lineWidth=1;ctx.strokeStyle='#e1e6df';ctx.beginPath();
+    for(let x=0;x<=g.w;x++){ctx.moveTo(x*C+.5,0);ctx.lineTo(x*C+.5,640);}
+    for(let y=0;y<=g.h;y++){ctx.moveTo(0,y*C+.5);ctx.lineTo(960,y*C+.5);}ctx.stroke();
+    const goal=g.goal;ctx.fillStyle='#e7f2e9';ctx.strokeStyle='#39835b';ctx.lineWidth=2;
+    ctx.beginPath();ctx.arc(goal.x*C,goal.y*C,goal.r*C,0,Math.PI*2);ctx.fill();ctx.stroke();
+    ctx.fillStyle='#30764e';ctx.font='11px system-ui';ctx.textAlign='center';ctx.fillText('GOAL',goal.x*C,goal.y*C-32);
+    // No strokes or gaps between occupied cells: all use the same fill.
+    ctx.fillStyle=wall;
+    for(let y=0;y<g.h;y++)for(let x=0;x<g.w;x++)if(g.grid[y*g.w+x])ctx.fillRect(x*C,y*C,C,C);
+    ctx.lineWidth=1.25;
+    for(const polarity of [1,-1]){
+      ctx.strokeStyle=polarity===1?'rgba(40,116,185,.58)':'rgba(207,73,63,.65)';
+      ctx.setLineDash(polarity===1?[]:[4,3]);ctx.beginPath();
+      for(const a of g.anchors)if(a.polarity===polarity){ctx.moveTo(a.x*C,a.y*C);ctx.lineTo(b.x*C,b.y*C);}
+      ctx.stroke();
+    }
+    ctx.setLineDash([]);
+    for(let i=0;i<g.anchors.length;i++){
+      const a=g.anchors[i];ctx.beginPath();ctx.fillStyle=a.polarity===1?'#4b9bdf':'#ef746a';ctx.arc(a.x*C,a.y*C,debug?3:1.8,0,Math.PI*2);ctx.fill();
+      if(debug){ctx.fillStyle=a.polarity===1?'#2874b9':'#cf493f';ctx.font='10px ui-monospace';ctx.fillText(i+1,a.x*C+7,a.y*C-6);}
+    }
+    const car=g.car;ctx.fillStyle=wall;ctx.fillRect(car.x*C,car.y*C,C,C);
+    ctx.save();ctx.translate((car.x+.5)*C,(car.y+.5)*C);ctx.rotate(car.d*Math.PI/2);
+    ctx.fillStyle='#fff';ctx.beginPath();ctx.moveTo(5,0);ctx.lineTo(-3,-4);ctx.lineTo(-3,4);ctx.closePath();ctx.fill();ctx.restore();
+    ctx.fillStyle=g.state==='lost'?'#c14a3c':'#2874b9';ctx.beginPath();ctx.arc(b.x*C,b.y*C,b.r*C,0,Math.PI*2);ctx.fill();
+    if(debug){
+      const n=g.nextMove();if(n){ctx.fillStyle='rgba(220,142,39,.28)';ctx.fillRect(n.x*C,n.y*C,C,C);}
+      ctx.strokeStyle='#dc8e27';ctx.lineWidth=2;ctx.strokeRect(car.x*C+1,car.y*C+1,C-2,C-2);
+      for(const a of g.anchors){const dx=a.x-b.x,dy=a.y-b.y,len=Math.hypot(dx,dy)||1;arrow(b.x*C,b.y*C,a.polarity*dx/len*30,a.polarity*dy/len*30,a.polarity===1?'rgba(40,116,185,.6)':'rgba(207,73,63,.6)');}
+      const f=g.computeForce(),mag=Math.hypot(f.x,f.y),scale=mag>0?Math.min(90,mag*12)/mag:0;arrow(b.x*C,b.y*C,f.x*scale,f.y*scale,'#8543ad',2.5);
+      if(g.lastReverse){const r=g.lastReverse;arrow((r.from.x+.5)*C,(r.from.y+.5)*C,(r.to.x-r.from.x)*C,(r.to.y-r.from.y)*C,'#a46db3',2);}
+      if(g.hit){ctx.strokeStyle='#d84f3d';ctx.strokeRect(g.hit.x*C,g.hit.y*C,C,C);}
+    }
+  }
+  function play(){if(g.terminal())return;running=!running;if(running)g.state='playing';acc=0;refresh();}
+  function reverse(){g.reverse();acc=0;refresh();draw();}
+  function reset(){running=false;acc=0;g.reset($('level').value);refresh();draw();}
+  $('play').onclick=play;$('reverse').onclick=reverse;$('reset').onclick=reset;
+  canvas.addEventListener('click',reverse);
+  $('newCourse').onclick=()=>{running=false;acc=0;$('level').value='random';g.newCourse();refresh();draw();};
+  $('step').onclick=()=>{if(!running){g.stepCell();refresh();draw();}};
+  $('level').onchange=reset;
+  $('debug').onchange=()=>{if($('debug').checked)$('settings').open=true;refresh();draw();};
+  for(const id of ['speed','spacing','tension','freeze'])$(id).addEventListener('input',settings);
+  $('defaults').onclick=()=>{$('speed').value=8;$('spacing').value=4;$('tension').value=.7;$('freeze').checked=false;settings();reset();};
+  document.addEventListener('keydown',e=>{
+    if(e.repeat||e.ctrlKey||e.metaKey||e.altKey)return;
+    if(['INPUT','SELECT','TEXTAREA','SUMMARY'].includes(document.activeElement.tagName))return;
+    const k=e.key.toLowerCase();
+    if(e.code==='Space'||(e.key==='Enter'&&document.activeElement===canvas)){e.preventDefault();reverse();}
+    else if(k==='p'){e.preventDefault();play();}
+    else if(k==='r')reset();
+    else if(k==='n'&&!running){g.stepCell();refresh();draw();}
+    else if(k==='d'){$('debug').checked=!$('debug').checked;$('debug').onchange();}
+  });
+  document.addEventListener('visibilitychange',()=>{if(document.hidden&&running){running=false;acc=0;refresh();}});
+  function frame(t){
+    const elapsed=last?Math.min(.1,(t-last)/1000):0;last=t;
+    if(running){acc+=elapsed;while(acc>=1/120&&!g.terminal()){g.tick();acc-=1/120;}if(g.terminal())running=false;draw();}
+    if(t-lastText>100||g.terminal()){refresh();lastText=t;}
+    requestAnimationFrame(frame);
+  }
+  settings();refresh();draw();requestAnimationFrame(frame);
+})();
+</script>
+</body>
+</html>
